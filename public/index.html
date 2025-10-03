@@ -11,6 +11,10 @@
     header h1 { margin: 0; }
     ul { margin-top: 1rem; }
     code { background: #f5f5f5; padding: 0.2rem 0.4rem; border-radius: 4px; }
+    .row { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+    .hint { opacity:.8; }
+    #qrOverlay { position: absolute; inset: 0; pointer-events: none; }
+    #qrBox { position: relative; display:inline-block; }
   </style>
 </head>
 <body>
@@ -25,22 +29,37 @@
   <section>
     <h2>カメラをこのページで起動して表示</h2>
     <p>HTTPS（または localhost）でのみ動作します。初回はカメラの使用許可が求められます。</p>
-    <div style="display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;">
+    <div class="row">
       <button id="startCam">カメラ起動</button>
       <button id="stopCam" disabled>停止</button>
       <span id="camStatus" style="opacity:.8;">待機中</span>
     </div>
-    <div style="margin-top: .75rem;">
+    <div id="qrBox" style="margin-top:.75rem;">
       <video id="preview" playsinline autoplay muted style="width:min(720px,95vw); background:#000; border-radius:.5rem;"></video>
+      <canvas id="qrOverlay"></canvas>
+    </div>
+    <div class="row" style="margin-top:.5rem;">
+      <button id="startQR" disabled>QRスキャン開始</button>
+      <button id="stopQR" disabled>QR停止</button>
+      <span class="hint">結果: <code id="qrResult">-</code></span>
     </div>
   </section>
 
+  <!-- jsQR CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
   <script>
-    const startBtn = document.getElementById('startCam');
+  const startBtn = document.getElementById('startCam');
     const stopBtn = document.getElementById('stopCam');
     const statusEl = document.getElementById('camStatus');
     const videoEl = document.getElementById('preview');
+  const overlay = document.getElementById('qrOverlay');
+  const startQR = document.getElementById('startQR');
+  const stopQR = document.getElementById('stopQR');
+  const qrResultEl = document.getElementById('qrResult');
     let stream = null;
+  let qrRAF = null;
+  let scanning = false;
 
     function setStatus(s){ statusEl.textContent = s; }
 
@@ -59,6 +78,8 @@
         videoEl.srcObject = stream;
         setStatus('映像取得中');
         stopBtn.disabled = false;
+        // QRボタン有効化
+        startQR.disabled = false;
       } catch (e) {
         console.error(e);
         setStatus('起動失敗: ' + (e && e.name || 'Unknown'));
@@ -75,7 +96,65 @@
         setStatus('停止しました');
         stopBtn.disabled = true;
         startBtn.disabled = false;
+        // QR停止
+        scanning = false;
+        startQR.disabled = true;
+        stopQR.disabled = true;
+        if (qrRAF) { cancelAnimationFrame(qrRAF); qrRAF = null; }
       }
+    });
+
+    function drawOverlayLine(ctx, begin, end, color) {
+      ctx.beginPath();
+      ctx.moveTo(begin.x, begin.y);
+      ctx.lineTo(end.x, end.y);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = color;
+      ctx.stroke();
+    }
+
+    function scanLoop() {
+      if (!scanning || !videoEl || videoEl.readyState < 2) {
+        qrRAF = requestAnimationFrame(scanLoop);
+        return;
+      }
+      const vw = videoEl.videoWidth || 640;
+      const vh = videoEl.videoHeight || 480;
+      // overlay を video の見かけサイズに合わせる
+      const rect = videoEl.getBoundingClientRect();
+      overlay.width = rect.width;
+      overlay.height = rect.height;
+      const ctx = overlay.getContext('2d');
+      ctx.drawImage(videoEl, 0, 0, overlay.width, overlay.height);
+      const imageData = ctx.getImageData(0, 0, overlay.width, overlay.height);
+      const qr = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+      if (qr) {
+        // 枠線表示
+        drawOverlayLine(ctx, qr.location.topLeftCorner, qr.location.topRightCorner, '#00ff88');
+        drawOverlayLine(ctx, qr.location.topRightCorner, qr.location.bottomRightCorner, '#00ff88');
+        drawOverlayLine(ctx, qr.location.bottomRightCorner, qr.location.bottomLeftCorner, '#00ff88');
+        drawOverlayLine(ctx, qr.location.bottomLeftCorner, qr.location.topLeftCorner, '#00ff88');
+        qrResultEl.textContent = qr.data;
+      }
+      qrRAF = requestAnimationFrame(scanLoop);
+    }
+
+    startQR.addEventListener('click', () => {
+      scanning = true;
+      startQR.disabled = true;
+      stopQR.disabled = false;
+      qrResultEl.textContent = '-';
+      if (!qrRAF) qrRAF = requestAnimationFrame(scanLoop);
+    });
+
+    stopQR.addEventListener('click', () => {
+      scanning = false;
+      startQR.disabled = false;
+      stopQR.disabled = true;
+      if (qrRAF) { cancelAnimationFrame(qrRAF); qrRAF = null; }
+      const ctx = overlay.getContext('2d');
+      ctx && ctx.clearRect(0, 0, overlay.width, overlay.height);
     });
   </script>
 </body>
