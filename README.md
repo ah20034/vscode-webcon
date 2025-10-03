@@ -12,7 +12,8 @@ git add README.md && git commit -m 'docs: add README.md' || echo 'NO_CHANGES' &&
 
 # スマホで見る方法
 ターミナルでifconfig
-LAN内のIPアドレス
+
+->LAN内のIPアドレス
 例：en0: ... 
    inet 10.18.202.72 netmask 0xffff0000 broadcast 10.18.255.255
    status: active
