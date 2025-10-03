@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ARデモ | カメラ・マーカー投影・データ入力</title>
+  <style>
+    :root { --ui-bg: rgba(0,0,0,0.55); --ui-border: rgba(255,255,255,0.2); }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: #fff; background: #000; }
+    header { position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; gap: .5rem; align-items: center; padding: .75rem 1rem; background: var(--ui-bg); backdrop-filter: blur(6px); border-bottom: 1px solid var(--ui-border); }
+    header h1 { font-size: 1rem; margin: 0; font-weight: 600; opacity: .9; }
+    .spacer { flex: 1; }
+    button { appearance: none; border: 1px solid var(--ui-border); background: rgba(255,255,255,0.08); color: #fff; padding: .5rem .8rem; border-radius: .5rem; cursor: pointer; font-size: .95rem; }
+    button:hover { background: rgba(255,255,255,0.16); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+    main { padding-top: 56px; }
+    #ar-container { position: relative; width: 100vw; height: calc(100dvh - 56px); overflow: hidden; background: #000; }
+    /* A-Frame canvas will fill container when embedded */
+    a-scene { width: 100%; height: 100%; }
+    /* Input modal */
+    dialog { border: 1px solid var(--ui-border); background: #1a1a1a; color: #fff; border-radius: .75rem; padding: 1rem; width: min(480px, 92vw); }
+    dialog form { display: grid; gap: .75rem; }
+    input[type="text"], textarea { width: 100%; padding: .6rem .7rem; border-radius: .5rem; border: 1px solid #333; background: #111; color: #fff; }
+    .row { display: flex; gap: .5rem; justify-content: flex-end; }
+    .note { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; padding: .5rem 1rem; background: var(--ui-bg); border-top: 1px solid var(--ui-border); font-size: .9rem; opacity: .9; }
+    .link { color: #9ad; }
+    /* Preview box */
+    #previewBox { position: fixed; right: 12px; bottom: 64px; z-index: 11; width: 220px; height: 132px; background: rgba(0,0,0,0.7); border: 1px solid var(--ui-border); border-radius: .5rem; display: none; overflow: hidden; }
+    #previewBox canvas { width: 100%; height: 100%; display: block; }
+  </style>
+  <!-- A-Frame & AR.js (CDN) -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ar.js@3.4.4/aframe/build/aframe-ar.js"></script>
+</head>
+<body>
+  <header>
+    <h1>ARデモ</h1>
+    <div class="spacer"></div>
+    <span id="status" style="font-size:.9rem;opacity:.8;">待機中</span>
+    <button id="btnStart">カメラ起動</button>
+    <button id="btnToggle" disabled>マーカー投影 ON/OFF</button>
+    <button id="btnPreview" disabled>プレビュー表示 ON</button>
+    <button id="btnInput" disabled>データ入力</button>
+  </header>
+  <main>
+    <div id="ar-container"></div>
+  </main>
+  <div id="previewBox"><canvas id="previewCanvas"></canvas></div>
+  <div class="note">
+    初めての方は <a class="link" href="https://ar-js-org.github.io/AR.js-Docs/marker-based/" target="_blank" rel="noopener">HIROマーカー</a> を表示・印刷してカメラに写してください。ローカル環境(http://localhost)ではカメラが利用できます。
+  </div>
+
+  <dialog id="inputDialog">
+    <form method="dialog" id="inputForm">
+      <label>投影テキスト</label>
+      <input type="text" id="textValue" placeholder="例: Hello WebCon" />
+      <div class="row">
+        <button type="button" id="cancelInput">キャンセル</button>
+        <button type="submit" id="submitInput">適用</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    const arContainer = document.getElementById('ar-container');
+  const btnStart = document.getElementById('btnStart');
+    const btnToggle = document.getElementById('btnToggle');
+    const btnInput = document.getElementById('btnInput');
+    const btnPreview = document.getElementById('btnPreview');
+    const previewBox = document.getElementById('previewBox');
+    const previewCanvas = document.getElementById('previewCanvas');
+    const pctx = previewCanvas.getContext('2d');
+  const statusEl = document.getElementById('status');
+    const inputDialog = document.getElementById('inputDialog');
+    const inputForm = document.getElementById('inputForm');
+    const textValue = document.getElementById('textValue');
+
+    let scene; // <a-scene>
+    let marker; // <a-marker>
+    let projBox; // <a-box>
+    let projText; // <a-text>
+  let projecting = false;
+  let previewOn = false;
+  let previewRAF = null;
+
+    function setStatus(text) {
+      if (statusEl) statusEl.textContent = text;
+    }
+
+    function createScene() {
+      scene = document.createElement('a-scene');
+      scene.setAttribute('embedded', '');
+      scene.setAttribute('vr-mode-ui', 'enabled: false');
+      scene.setAttribute('renderer', 'precision: mediump; antialias: true');
+      scene.setAttribute('arjs', 'sourceType: webcam; facingMode: environment; debugUIEnabled: false;');
+
+      // marker (hiro preset)
+      marker = document.createElement('a-marker');
+      marker.setAttribute('preset', 'hiro');
+
+      // projected object (box)
+      projBox = document.createElement('a-box');
+      projBox.setAttribute('position', '0 0.5 0');
+      projBox.setAttribute('depth', '0.5');
+      projBox.setAttribute('height', '0.5');
+      projBox.setAttribute('width', '0.5');
+      projBox.setAttribute('material', 'color: #ff5252; opacity: 0.85; metalness: 0.2; roughness: 0.8');
+      projBox.setAttribute('visible', 'false');
+
+      // projected text
+      projText = document.createElement('a-text');
+      projText.setAttribute('value', '');
+      projText.setAttribute('align', 'center');
+      projText.setAttribute('color', '#00d4aa');
+      projText.setAttribute('position', '0 1.0 0');
+      projText.setAttribute('scale', '1 1 1');
+      projText.setAttribute('anchor', 'center');
+      projText.setAttribute('side', 'double');
+      projText.setAttribute('visible', 'false');
+
+      marker.appendChild(projBox);
+      marker.appendChild(projText);
+
+      const camera = document.createElement('a-entity');
+      camera.setAttribute('camera', 'active: true');
+
+      scene.appendChild(marker);
+      scene.appendChild(camera);
+      arContainer.appendChild(scene);
+
+      scene.addEventListener('loaded', () => {
+        // UI enable after AR scene loads
+        btnToggle.disabled = false;
+        btnInput.disabled = false;
+        setStatus('シーン読み込み完了');
+      }, { once: true });
+
+      // AR.js camera events (一部環境で発火しない可能性あり)
+      scene.addEventListener('arjs-video-loaded', () => {
+        setStatus('カメラ起動完了');
+        btnStart.textContent = 'カメラ起動済み';
+        btnStart.disabled = true;
+        if (btnPreview) {
+          btnPreview.disabled = false;
+          // 起動時にプレビューを自動表示
+          previewOn = true;
+          btnPreview.textContent = 'プレビュー表示 OFF';
+          previewBox.style.display = 'block';
+          if (!previewRAF) previewRAF = requestAnimationFrame(drawPreviewLoop);
+        }
+      });
+      scene.addEventListener('arjs-video-error', () => {
+        setStatus('カメラ起動エラー');
+      });
+    }
+
+    // Camera start
+    btnStart.addEventListener('click', async () => {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          alert('このブラウザはカメラ API に対応していません。');
+          return;
+        }
+        btnStart.disabled = true;
+        btnStart.textContent = 'カメラ権限確認中…';
+        setStatus('カメラ権限を要求中');
+
+        // 1) 権限のウォームアップ（許可ダイアログを確実に表示）
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false
+        });
+        // 取得したトラックはすぐ停止（AR.js に制御を委ねる）
+        stream.getTracks().forEach(t => t.stop());
+
+        // 2) シーン生成（ユーザー操作のコンテキスト内）
+        if (!scene) createScene();
+        btnStart.textContent = 'カメラ起動中…';
+        setStatus('カメラ初期化中…');
+
+        // 3) 確認用のタイムアウト（UI フィードバック）
+        setTimeout(() => {
+          // video 要素が生成されていれば起動できている可能性が高い
+          const v = document.querySelector('video');
+          if (v && v.readyState >= 2) {
+            setStatus('カメラ起動完了');
+            btnStart.textContent = 'カメラ起動済み';
+          } else {
+            setStatus('カメラの映像待機中…（ブラウザの権限／別アプリ使用を確認）');
+          }
+        }, 1500);
+      } catch (e) {
+        console.error(e);
+        setStatus('カメラ起動に失敗');
+        alert('カメラの起動に失敗しました。権限設定や他アプリの占有、ブラウザ設定を確認してください。');
+        btnStart.disabled = false;
+        btnStart.textContent = 'カメラ起動';
+      }
+    });
+
+    // Toggle projection (box)
+    btnToggle.addEventListener('click', () => {
+      if (!projBox) return;
+      projecting = !projecting;
+      projBox.setAttribute('visible', projecting);
+      btnToggle.textContent = projecting ? 'マーカー投影 OFF' : 'マーカー投影 ON';
+    });
+
+    // Input text and project on marker
+    btnInput.addEventListener('click', () => {
+      if (!projText) return;
+      textValue.value = projText.getAttribute('value') || '';
+      if (typeof inputDialog.showModal === 'function') {
+        inputDialog.showModal();
+      } else {
+        const v = prompt('投影テキストを入力', textValue.value);
+        if (v != null) applyText(v);
+      }
+    });
+
+    function applyText(value) {
+      const v = String(value).slice(0, 80); // 簡易制限
+      projText.setAttribute('value', v);
+      projText.setAttribute('visible', !!v);
+    }
+
+    inputForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      applyText(textValue.value);
+      inputDialog.close();
+    });
+    document.getElementById('cancelInput').addEventListener('click', () => inputDialog.close());
+
+    function getARVideoEl() {
+      return document.querySelector('#arjs-video') || (scene && scene.querySelector('video')) || document.querySelector('video');
+    }
+
+    function drawPreviewLoop() {
+      const v = getARVideoEl();
+      if (!previewOn || !v || v.readyState < 2) {
+        previewRAF = requestAnimationFrame(drawPreviewLoop);
+        return;
+      }
+      const vw = v.videoWidth || 640;
+      const vh = v.videoHeight || 480;
+      const cw = previewCanvas.clientWidth;
+      const ch = previewCanvas.clientHeight;
+      if (previewCanvas.width !== cw || previewCanvas.height !== ch) {
+        previewCanvas.width = cw;
+        previewCanvas.height = ch;
+      }
+      const videoAspect = vw / vh;
+      const canvasAspect = cw / ch;
+      let sx, sy, sw, sh;
+      if (videoAspect > canvasAspect) {
+        sh = vh;
+        sw = vh * canvasAspect;
+        sx = (vw - sw) / 2;
+        sy = 0;
+      } else {
+        sw = vw;
+        sh = vw / canvasAspect;
+        sx = 0;
+        sy = (vh - sh) / 2;
+      }
+      pctx.drawImage(v, sx, sy, sw, sh, 0, 0, cw, ch);
+      previewRAF = requestAnimationFrame(drawPreviewLoop);
+    }
+
+    if (btnPreview) {
+      btnPreview.addEventListener('click', () => {
+        previewOn = !previewOn;
+        btnPreview.textContent = previewOn ? 'プレビュー表示 OFF' : 'プレビュー表示 ON';
+        previewBox.style.display = previewOn ? 'block' : 'none';
+        if (previewOn) {
+          if (!previewRAF) previewRAF = requestAnimationFrame(drawPreviewLoop);
+        } else if (previewRAF) {
+          cancelAnimationFrame(previewRAF);
+          previewRAF = null;
+        }
+      });
+    }
+
+    // Graceful fallback message if AR.js fails
+    window.addEventListener('error', (e) => {
+      if ((e.message||'').toLowerCase().includes('ar.js')) {
+        alert('AR 初期化で問題が発生しました。別のブラウザや https/localhost でお試しください。');
+      }
+    });
+  </script>
+</body>
+</html>
