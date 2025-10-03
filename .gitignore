@@ -1,0 +1,22 @@
+# OS / editor
+.DS_Store
+.vscode/
+
+# Node
+node_modules/
+npm-debug.log*
+*.log
+
+# Build/coverage
+dist/
+coverage/
+
+# Env / certs (local only)
+.env
+ssl/
+
+# Misc
+*.tmp
+*.swp
+*.bak
+public/.DS_Store
