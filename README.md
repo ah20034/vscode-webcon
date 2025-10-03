@@ -1,5 +1,5 @@
 # vscode-webcon
 
 # サーバー起動コマンド
-cd vscode-server
+cd vscode-webcon
 npm run start
