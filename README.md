@@ -1,3 +1,8 @@
+# 環境整備
+node.jsをダウンロード
+windowsだったら、ターミナルのGit bashで
+node -vでダウンロードできてるか確認
+
 # サーバー起動コマンド
 cd vscode-webcon
 npm run start
