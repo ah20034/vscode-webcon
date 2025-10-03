@@ -19,6 +19,10 @@ git add README.md && git commit -m 'docs: add README.md' || echo 'NO_CHANGES' &&
 ->git push origin main
 GitHub上へファイルを上げることができます。
 
+->git pull origin <ブランチ名 ex. main , master etc.>
+既にローカルに存在するリポジトリに対して、リモートリポジトリの変更を取り込む操作です。
+つまり、他の人がどこを変更したかわかるようになります。
+
 # スマホで見る方法
 ターミナルでifconfig
 
