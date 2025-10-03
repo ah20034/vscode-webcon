@@ -9,8 +9,9 @@ npm run start
 
 # gitにあげるコマンド例
 git add README.md && git commit -m 'docs: add README.md' || echo 'NO_CHANGES' && git push origin main
-->git add 'ファイル名'
+->git add 'ファイル名'（ステージング状態）
 どのファイルをリモートリポジトリに上げるかをこのコマンドで設定します。
+どこを変更した部分かわかるようになります。
 
 ->git commit -m 'メッセージ'
 メッセージと書かれている場所には好きな言葉を書いて大丈夫です。
@@ -28,3 +29,6 @@ GitHub上へファイルを上げることができます。
 
 -> https://10.18.202.72:3443/　
 このURLをアクセスする
+
+# QRコード読み込みできるようになった
+jsQRで読み込むことはできた
