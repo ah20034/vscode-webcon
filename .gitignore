@@ -3,7 +3,7 @@
 .vscode/
 
 # Node
-node_modules/
+# node_modules/  # 追跡対象に含めるため除外を解除
 npm-debug.log*
 *.log
 
@@ -13,7 +13,7 @@ coverage/
 
 # Env / certs (local only)
 .env
-ssl/
+# ssl/  # 追跡対象に含めるため除外を解除
 
 # Misc
 *.tmp
