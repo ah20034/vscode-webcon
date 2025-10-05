@@ -5,7 +5,7 @@ node -vでダウンロードできてるか確認
 
 # サーバー起動コマンド
 cd vscode-webcon
-npm run start
+npm start
 
 # gitにあげるコマンド例
 git add README.md && git commit -m 'docs: add README.md' || echo 'NO_CHANGES' && git push origin main
@@ -34,5 +34,6 @@ GitHub上へファイルを上げることができます。
 -> https://10.18.202.72:3443/　
 このURLをアクセスする
 
-# QRコード読み込みできるようになった
-jsQRで読み込むことはできた
+# /public/app.client.js
+Javascriptで、ブラウザで実行するもの
+役割：カメラ起動→QRコード読み取り→検出時に位置情報を取得する（手動で現在地取得や追跡開始/停止も可能）
