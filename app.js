@@ -1,35 +1,163 @@
-// カメラ/QR/位置情報を Vanilla JS で実装。QR検出時に即座に現在地を1回取得。// DOMconst startBtn = document.getElementById('startCam');const stopBtn  = document.getElementById('stopCam');const statusEl = document.getElementById('camStatus');const videoEl  = document.getElementById('preview');const overlay  = document.getElementById('qrOverlay');const startQR  = document.getElementById('startQR');const stopQR   = document.getElementById('stopQR');const qrResultEl = document.getElementById('qrResult');// 位置情報DOMconst gStatus = document.getElementById('geo-status');const gReq = document.getElementById('geo-request');const gWatch = document.getElementById('geo-watch');const gStop = document.getElementById('geo-stop');const latEl = document.getElementById('lat');const lngEl = document.getElementById('lng');const accEl = document.getElementById('acc');const tsEl  = document.getElementById('ts');// 選択ダイアログconst dlg = document.getElementById('qrChoice');const btnPost = document.getElementById('choice-post');const btnView = document.getElementById('choice-view');const btnClose = document.getElementById('choice-close');// 状態let stream = null;let scanning = false;let qrRAF = null;let scanCaptured = false; // 1セッションで1度だけ確定let watchId = null;let lastQR = null;// utilconst setStatus = (s) => statusEl.textContent = s;const setG = (s) => gStatus.textContent = s;// 位置情報オプションconst geoOpts = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };function onGeo(pos) {  const { latitude, longitude, accuracy } = pos.coords;  latEl.textContent = latitude.toFixed(6);  lngEl.textContent = longitude.toFixed(6);  accEl.textContent = Math.round(accuracy);  tsEl.textContent = new Date(pos.timestamp).toLocaleString();  setG('取得成功');}function onGeoErr(err) {  setG(`エラー(${err.code}): ${err.message}`);}function requestOneShotGeo() {  if (!('geolocation' in navigator)) {    setG('このブラウザは位置情報に未対応');    return;  }  if (!isSecureContext) {    setG('HTTPS以外（localhost除く）では位置情報が制限されます');  }  setG('QR検出 → 現在地取得中...');  navigator.geolocation.getCurrentPosition(onGeo, onGeoErr, geoOpts);}// カメラ起動/停止startBtn.addEventListener('click', async () => {  try {    if (!navigator.mediaDevices?.getUserMedia) {      alert('このブラウザはカメラ API に未対応です。');      return;    }    setStatus('権限確認中…');    startBtn.disabled = true;    stream = await navigator.mediaDevices.getUserMedia({      video: { facingMode: { ideal: 'environment' } },      audio: false,    });    videoEl.srcObject = stream;    setStatus('映像取得中');    stopBtn.disabled = false;    startQR.disabled = false;  } catch (e) {    console.error(e);    setStatus('起動失敗: ' + (e?.name || 'Unknown'));    alert('カメラが起動できません。権限や他アプリの使用状況を確認してください。');    startBtn.disabled = false;  }});stopBtn.addEventListener('click', () => {  if (stream) {    stream.getTracks().forEach(t => t.stop());    stream = null;  }  videoEl.srcObject = null;  setStatus('停止しました');  stopBtn.disabled = true;  startBtn.disabled = false;  // QR 停止  scanning = false;  startQR.disabled = true;  stopQR.disabled = true;  if (qrRAF) { cancelAnimationFrame(qrRAF); qrRAF = null; }  const ctx = overlay.getContext('2d');  ctx && ctx.clearRect(0, 0, overlay.width, overlay.height);});// QR スキャンfunction drawLine(ctx, a, b, color) {  ctx.beginPath();  ctx.moveTo(a.x, a.y);  ctx.lineTo(b.x, b.y);  ctx.lineWidth = 4;  ctx.strokeStyle = color;  ctx.stroke();}function scanLoop() {  if (!scanning || !videoEl || videoEl.readyState < 2) {    qrRAF = requestAnimationFrame(scanLoop);    return;  }  const rect = videoEl.getBoundingClientRect();  overlay.width = rect.width;  overlay.height = rect.height;  const ctx = overlay.getContext('2d');  ctx.drawImage(videoEl, 0, 0, overlay.width, overlay.height);  const imageData = ctx.getImageData(0, 0, overlay.width, overlay.height);  const qr = window.jsQR?.(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });  ctx.clearRect(0, 0, overlay.width, overlay.height);  if (qr) {    drawLine(ctx, qr.location.topLeftCorner, qr.location.topRightCorner, '#00ff88');    drawLine(ctx, qr.location.topRightCorner, qr.location.bottomRightCorner, '#00ff88');    drawLine(ctx, qr.location.bottomRightCorner, qr.location.bottomLeftCorner, '#00ff88');    drawLine(ctx, qr.location.bottomLeftCorner, qr.location.topLeftCorner, '#00ff88');    qrResultEl.textContent = qr.data;    if (!scanCaptured) {      scanCaptured = true;      lastQR = qr.data;      // スキャン停止（プレビューは継続）      scanning = false;      startQR.disabled = false;      stopQR.disabled = true;      if (qrRAF) { cancelAnimationFrame(qrRAF); qrRAF = null; }      // 位置情報を1回取得      requestOneShotGeo();      // 選択ダイアログ（将来の投稿/閲覧遷移に利用）      if (typeof dlg?.showModal === 'function') {        dlg.showModal();      }    }  }  qrRAF = requestAnimationFrame(scanLoop);}startQR.addEventListener('click', () => {  scanning = true;  scanCaptured = false;  startQR.disabled = true;  stopQR.disabled = false;  qrResultEl.textContent = '-';  if (!qrRAF) qrRAF = requestAnimationFrame(scanLoop);});stopQR.addEventListener('click', () => {  scanning = false;  startQR.disabled = false;  stopQR.disabled = true;  if (qrRAF) { cancelAnimationFrame(qrRAF); qrRAF = null; }  const ctx = overlay.getContext('2d');  ctx && ctx.clearRect(0, 0, overlay.width, overlay.height);});// 位置情報の手動操作gReq.addEventListener('click', () => {  setG('現在地を取得中...');  navigator.geolocation.getCurrentPosition(onGeo, onGeoErr, geoOpts);});gWatch.addEventListener('click', () => {  if (watchId !== null) return;  setG('追跡中...');  watchId = navigator.geolocation.watchPosition(onGeo, onGeoErr, geoOpts);  gWatch.disabled = true;  gStop.disabled = false;});gStop.addEventListener('click', () => {  if (watchId !== null) {    navigator.geolocation.clearWatch(watchId);    watchId = null;    setG('追跡停止');    gWatch.disabled = false;    gStop.disabled = true;  }});// 権限状態の可視化（対応ブラウザ）if (navigator.permissions?.query) {  navigator.permissions.query({ name: 'geolocation' })    .then(p => {      setG(`権限: ${p.state}`);      p.onchange = () => setG(`権限: ${p.state}`);    })    .catch(() => {});}// ダイアログのボタン（今はプレースホルダ）btnPost?.addEventListener('click', () => {  console.log('投稿へ遷移（準備中）', { qr: lastQR, lat: latEl.textContent, lng: lngEl.textContent });  dlg.close();});btnView?.addEventListener('click', () => {  console.log('閲覧へ遷移（準備中）', { qr: lastQR, lat: latEl.textContent, lng: lngEl.textContent });  dlg.close();});btnClose?.addEventListener('click', () => dlg.close());
-
 // Simple Express web server (HTTP + optional HTTPS)
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const https = require('https');
+const multer = require('multer');
+const { v4: uuidv4 } = require('uuid');
+
+const { db } = require('./server/db/sqlite');
+const { haversineMeters, bbox } = require('./server/services/geo');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const SSL_PORT = process.env.SSL_PORT || 3443;
+const PORT = parseInt(process.env.PORT || '3000', 10);
+const SSL_PORT = parseInt(process.env.SSL_PORT || '3443', 10);
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const INDEX_HTML = path.join(PUBLIC_DIR, 'index.html');
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// 一時的に AR ページをブロック
-app.get(['/ar', '/ar.html'], (req, res) => {
-  res.status(404).send('Not Found');
-});
+// ボディ
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
 
 // 静的配信
 app.use(express.static(PUBLIC_DIR));
+app.use('/uploads', express.static(UPLOAD_DIR, { fallthrough: true }));
 
-// ヘルスチェック（表示はしないがAPIは残す）
-app.get('/health', (req, res) => {
-  res.json({ ok: true, uptime: process.uptime(), ts: Date.now() });
+// Multer: ローカル保存
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+  filename: (_req, file, cb) => {
+    const safe = file.originalname.replace(/[^\w.\-]+/g, '_');
+    cb(null, `${Date.now()}_${safe}`);
+  }
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: (parseInt(process.env.MAX_UPLOAD_MB || '20', 10)) * 1024 * 1024 },
 });
 
-// フォールバック（Express v5 互換）
+// SQL prepared statements
+const stmtInsertPost = db.prepare(`
+  INSERT INTO posts (id, type, title, description, lat, lng, mediaUrl, thumbUrl, size, contentType, originalName, createdBy, scanId)
+  VALUES (@id, @type, @title, @description, @lat, @lng, @mediaUrl, @thumbUrl, @size, @contentType, @originalName, @createdBy, @scanId)
+`);
+const stmtListByBox = db.prepare(`
+  SELECT * FROM posts
+  WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?
+  ORDER BY createdAt DESC
+  LIMIT 500
+`);
+const stmtInsertScan = db.prepare(`
+  INSERT INTO scans (id, qrPayload, lat, lng, sessionId, spotId)
+  VALUES (@id, @qrPayload, @lat, @lng, @sessionId, @spotId)
+`);
+const stmtListLatest = db.prepare(`
+  SELECT * FROM posts ORDER BY datetime(createdAt) DESC LIMIT 20
+`);
+const stmtListByQR = db.prepare(`
+  SELECT p.* FROM posts p
+  JOIN scans s ON p.scanId = s.id
+  WHERE s.qrPayload = ?
+  ORDER BY datetime(p.createdAt) DESC
+  LIMIT ?
+`);
+
+// API: 近傍取得（ハバースイン）
+app.get('/api/posts/near', (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  const radius = Number(req.query.radius || 200);
+  const limit = Math.min(Number(req.query.limit || 50), 200);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({ error: 'lat,lng が必要です' });
+  }
+  const box = bbox(lat, lng, radius);
+  const rows = stmtListByBox.all(box.minLat, box.maxLat, box.minLng, box.maxLng);
+  const items = rows.map(r => ({
+    ...r,
+    distance: haversineMeters(lat, lng, r.lat, r.lng)
+  }))
+  .filter(r => r.distance <= radius)
+  .sort((a,b) => a.distance - b.distance)
+  .slice(0, limit);
+  res.json({ items });
+});
+
+// API: 最新一覧
+app.get('/api/posts', (_req, res) => {
+  const items = stmtListLatest.all();
+  res.json({ items });
+});
+
+// API: QRに紐づく投稿一覧
+app.get('/api/posts/by-qr', (req, res) => {
+  const qr = (req.query.qr || '').toString();
+  const limit = Math.min(Number(req.query.limit || 50), 200);
+  if (!qr) return res.status(400).json({ error: 'qr が必要です' });
+  try {
+    const items = stmtListByQR.all(qr, limit);
+    res.json({ items });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'by_qr_failed' });
+  }
+});
+
+// API: 投稿作成（multipart: media + fields）
+app.post('/api/posts', upload.single('media'), (req, res) => {
+  try {
+    const { type, title, description, lat, lng, createdBy } = req.body;
+    const { scanId } = req.body; // ← フロントから渡す
+    const latN = Number(lat), lngN = Number(lng);
+    if (!type || !Number.isFinite(latN) || !Number.isFinite(lngN)) {
+      if (req.file) fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'type, lat, lng は必須' });
+    }
+    const id = uuidv4();
+    const mediaUrl = req.file ? `/uploads/${req.file.filename}` : null;
+    const size = req.file ? req.file.size : null;
+    const contentType = req.file ? req.file.mimetype : null;
+    const originalName = req.file ? req.file.originalname : null;
+
+    stmtInsertPost.run({
+      id, type, title: title || null, description: description || null,
+      lat: latN, lng: lngN, mediaUrl, thumbUrl: null, size,
+      contentType, originalName,
+      createdBy: createdBy || null, scanId: scanId || null
+    });
+    res.status(201).json({ id, type, title, description, lat: latN, lng: lngN, mediaUrl, size, contentType, originalName, createdBy, scanId: scanId || null });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'create_failed' });
+  }
+});
+
+// API: スキャン保存
+app.post('/api/scans', (req, res) => {
+  try {
+    const { qrPayload, lat, lng, sessionId, spotId } = req.body || {};
+    const latN = Number(lat), lngN = Number(lng);
+    if (!qrPayload || !Number.isFinite(latN) || !Number.isFinite(lngN)) {
+      return res.status(400).json({ error: 'qrPayload, lat, lng は必須' });
+    }
+    const id = uuidv4();
+    stmtInsertScan.run({ id, qrPayload, lat: latN, lng: lngN, sessionId: sessionId || null, spotId: spotId || null });
+    res.status(201).json({ id, ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'scan_failed' });
+  }
+});
+
+// ヘルス
+app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
+
+// フォールバック（静的SPA想定）
 app.use((req, res) => {
-  res.sendFile(INDEX_HTML);
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
 // HTTP
@@ -37,7 +165,7 @@ http.createServer(app).listen(PORT, () => {
   console.log(`[HTTP] http://localhost:${PORT}`);
 });
 
-// HTTPS（ssl/server.key & ssl/server.crt がある場合のみ）
+// HTTPS（任意）
 const keyPath = process.env.SSL_KEY_PATH || path.join(__dirname, 'ssl', 'server.key');
 const certPath = process.env.SSL_CERT_PATH || path.join(__dirname, 'ssl', 'server.crt');
 if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
@@ -46,5 +174,5 @@ if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
     console.log(`[HTTPS] https://localhost:${SSL_PORT}`);
   });
 } else {
-  console.log('[HTTPS] ssl/server.key または ssl/server.crt が見つかりません。HTTPSは無効です。');
+  console.log('[HTTPS] 証明書が無いためHTTPSは無効です。');
 }

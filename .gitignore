@@ -20,3 +20,5 @@ coverage/
 *.swp
 *.bak
 public/.DS_Store
+
+/generated/prisma

@@ -6,27 +6,23 @@
   <title>WebCon Demo</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 2rem; line-height: 1.6; }
-    header { display:flex; align-items:baseline; gap:.75rem; }
     .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
     #qrBox { position: relative; display:inline-block; margin-top:.75rem; }
     #preview { width:min(720px,95vw); background:#000; border-radius:.5rem; }
     #qrOverlay { position:absolute; inset:0; pointer-events:none; }
     code { background:#f5f5f5; padding:0 .4rem; border-radius:4px; }
     section { margin-top:1rem; padding:1rem; border:1px solid #ddd; border-radius:8px; }
-    dialog { border: none; border-radius:8px; padding:1rem 1.25rem; box-shadow:0 8px 24px rgba(0,0,0,.18); }
-    dialog::backdrop { background: rgba(0,0,0,.35); }
   </style>
 </head>
 <body>
   <header>
     <h1>WebCon サンプル</h1>
-    <small>カメラ + QR + 位置情報（Vanilla JS）</small>
+    <small>カメラ + QR + 位置情報</small>
   </header>
   <hr />
 
   <section>
     <h2>カメラとQRスキャン</h2>
-    <p>HTTPS（または localhost）でのみ動作します。スマホ実機は https でアクセスしてください。</p>
     <div class="row">
       <button id="startCam">カメラ起動</button>
       <button id="stopCam" disabled>停止</button>
@@ -59,20 +55,50 @@
     </ul>
   </section>
 
-  <!-- スキャン後の選択（将来拡張用） -->
-  <dialog id="qrChoice">
-    <p style="margin-top:0;"><strong>この場所でどうしますか？</strong></p>
-    <p style="opacity:.8; margin:.25rem 0 .75rem 0;">QRと現在地を取得しました。</p>
-    <div class="row">
-      <button id="choice-post">投稿する</button>
-      <button id="choice-view">見る</button>
-      <button id="choice-close">閉じる</button>
-    </div>
-  </dialog>
+  <section id="upload-section">
+    <h2>投稿（画像/3Dモデル）</h2>
+    <p>QRを読み取り、現在地が取得できたら、メディアを添えて投稿できます。</p>
+    <form id="postForm">
+      <div class="row">
+        <label>種類:
+          <select name="type" id="post-type">
+            <option value="image">画像</option>
+            <option value="model">3Dモデル</option>
+            <option value="text">テキスト</option>
+          </select>
+        </label>
+        <label>タイトル: <input name="title" id="post-title" placeholder="タイトル" /></label>
+      </div>
+      <div class="row" style="margin-top:.5rem;">
+        <label>説明: <input name="description" id="post-desc" placeholder="説明" size="40" /></label>
+      </div>
+      <div class="row" style="margin-top:.5rem;">
+        <label>メディア:
+          <input type="file" id="post-media" name="media" accept="image/*,.gltf,.glb,.obj,.fbx,.usdz,.usd,.zip" />
+        </label>
+      </div>
+      <div class="row" style="margin-top:.5rem;">
+        <button type="submit">投稿する</button>
+        <span id="post-status" style="opacity:.8;">未送信</span>
+      </div>
+    </form>
+    <small>※ 画像はプレビュー可能、3Dモデルは拡張子に応じて取り扱いが異なります。</small>
+  </section>
 
-  <!-- jsQR（グローバル jsQR） -->
+  <section id="qr-posts-section">
+    <h2>このQRの投稿を見る</h2>
+    <div class="row">
+      <button id="btn-load-posts" disabled>投稿を読み込む</button>
+      <span id="load-status" style="opacity:.8;">QR未検出</span>
+    </div>
+    <div id="posts-list" style="margin-top:.5rem;"></div>
+  </section>
+
+  <dialog id="qrChoice"></dialog>
+
+  <!-- 先に jsQR を読み込む -->
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-  <!-- アプリ本体 -->
-  <script type="module" src="./app.js"></script>
+  <!-- フロントJSを必ず読み込む -->
+  <script type="module" src="/app.client.js"></script>
 </body>
 </html>
